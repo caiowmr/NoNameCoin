@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NoNameCoin</title>
+    <title>Informações da Conta</title>
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -25,8 +25,24 @@
     </div>
 </header>
 <div class="container">
-    <h2>Bem-vindo ao NoNameCoin</h2>
-    <p>Escolha uma das opções acima para começar.</p>
+    <h2>Informações da Conta</h2>
+    <form method="POST" action="/account_info">
+        <label for="user_id">ID da Conta:</label>
+        <input type="text" id="user_id" name="user_id" required>
+        <button type="submit">Consultar</button>
+    </form>
+
+    {% if balance is not none %}
+    <div>
+        <h3>Conta: {{ user_id }}</h3>
+        <p>Saldo Atual: {{ balance }}</p>
+        <p>Transações Feitas: {{ transaction_count }}</p>
+    </div>
+    {% elif error %}
+    <div>
+        <p>{{ error }}</p>
+    </div>
+    {% endif %}
 </div>
 </body>
 </html>

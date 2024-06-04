@@ -36,6 +36,15 @@ def init_db():
                       validator_id TEXT NOT NULL,
                       status INTEGER DEFAULT 0)''')
 
+    # Nova tabela para armazenar o histórico de validações dos validadores
+    cursor.execute('''CREATE TABLE IF NOT EXISTS validator_history (
+                      validator_id TEXT NOT NULL,
+                      transaction_id INTEGER NOT NULL,
+                      validation_status INTEGER,
+                      penalty INTEGER DEFAULT 0,
+                      FOREIGN KEY (validator_id) REFERENCES validators (validator_id),
+                      FOREIGN KEY (transaction_id) REFERENCES transactions (transaction_id))''')
+
     conn.commit()
     conn.close()
 
@@ -48,7 +57,7 @@ def handle_create_transaction():
         sender = data['sender']
         receiver = data['receiver']
         amount = data['amount']
-        fee = 0.01 * amount
+        fee = 0.015 * amount
         timestamp = time.time()
 
         conn = sqlite3.connect(db_name)
@@ -62,11 +71,15 @@ def handle_create_transaction():
         if sender_balance[0] < amount + fee:
             return jsonify({"status": "error", "message": "Insufficient balance"}), 400
 
-        # Check if receiver exists
+        # Update sender's balance
+        new_sender_balance = sender_balance[0] - amount - fee
+        cursor.execute("UPDATE accounts SET balance=? WHERE user_id=?", (new_sender_balance, sender))
+
+        # Increment receiver's balance
         cursor.execute("SELECT balance FROM accounts WHERE user_id=?", (receiver,))
-        receiver_balance = cursor.fetchone()
-        if receiver_balance is None:
-            return jsonify({"status": "error", "message": "Receiver does not exist"}), 400
+        receiver_balance = cursor.fetchone()[0]
+        new_receiver_balance = receiver_balance + amount
+        cursor.execute("UPDATE accounts SET balance=? WHERE user_id=?", (new_receiver_balance, receiver))
 
         # Create the transaction
         cursor.execute("INSERT INTO transactions (sender, receiver, amount, fee, timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -75,12 +88,13 @@ def handle_create_transaction():
         transaction_id = cursor.lastrowid
         conn.close()
 
-        # Pass the transaction to the Seletor
+        # Pass the transaction to the Selector
         pass_transaction_to_selector(transaction_id)
 
         return jsonify({"status": "success", "message": "Transaction created"}), 201
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 def pass_transaction_to_selector(transaction_id):
@@ -197,6 +211,8 @@ def validate_transaction(data=None):
         if stored_key is None or stored_key[0] != unique_key:
             cursor.execute("UPDATE validation_queue SET status=2 WHERE transaction_id=? AND validator_id=?",
                            (transaction_id, validator_id))
+            cursor.execute("INSERT INTO validator_history (validator_id, transaction_id, validation_status, penalty) VALUES (?, ?, ?, ?)",
+                           (validator_id, transaction_id, 2, 1))
             conn.commit()
             conn.close()
             return jsonify({"status": "error", "message": "Invalid validator key"}), 400
@@ -206,12 +222,48 @@ def validate_transaction(data=None):
                        (validator_id, transaction_id))
         cursor.execute("UPDATE validation_queue SET status=1 WHERE transaction_id=? AND validator_id=?",
                        (transaction_id, validator_id))
+
+        # Update the balances of sender and receiver
+        cursor.execute("SELECT sender, receiver, amount, fee FROM transactions WHERE transaction_id=?", (transaction_id,))
+        transaction = cursor.fetchone()
+        sender = transaction[0]
+        receiver = transaction[1]
+        amount = transaction[2]
+        fee = transaction[3]
+
+        cursor.execute("UPDATE accounts SET balance = balance - ? WHERE user_id = ?", (amount + fee, sender))
+        cursor.execute("UPDATE accounts SET balance = balance + ? WHERE user_id = ?", (amount, receiver))
+
+        cursor.execute("INSERT INTO validator_history (validator_id, transaction_id, validation_status) VALUES (?, ?, ?)",
+                       (validator_id, transaction_id, 1))
         conn.commit()
         conn.close()
 
         return jsonify({"status": "success", "message": "Transaction validated"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/view_validators')
+def view_validators():
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    SELECT 
+        v.validator_id, 
+        COUNT(vh.transaction_id) AS validations_count, 
+        SUM(CASE WHEN vh.validation_status = 1 THEN 1 ELSE 0 END) AS approved_count,
+        SUM(CASE WHEN vh.validation_status = 2 THEN 1 ELSE 0 END) AS rejected_count,
+        SUM(vh.penalty) AS penalties
+    FROM validators v
+    LEFT JOIN validator_history vh ON v.validator_id = vh.validator_id
+    GROUP BY v.validator_id
+    ''')
+
+    validators = cursor.fetchall()
+    conn.close()
+    return render_template('view_validators.html', validators=validators)
 
 
 # Interface web
@@ -288,6 +340,30 @@ def register_validator_route():
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
     return render_template('register_validator.html')
+
+@app.route('/account_info', methods=['GET', 'POST'])
+def account_info():
+    if request.method == 'POST':
+        user_id = request.form['user_id']
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
+
+        # Obtenha o saldo da conta
+        cursor.execute("SELECT balance FROM accounts WHERE user_id=?", (user_id,))
+        balance = cursor.fetchone()
+
+        # Obtenha o número de transações
+        cursor.execute("SELECT COUNT(*) FROM transactions WHERE sender=? OR receiver=?", (user_id, user_id))
+        transaction_count = cursor.fetchone()[0]
+
+        conn.close()
+
+        if balance:
+            balance = balance[0]
+            return render_template('account_info.html', user_id=user_id, balance=balance, transaction_count=transaction_count)
+        else:
+            return render_template('account_info.html', error="Conta não encontrada")
+    return render_template('account_info.html')
 
 
 @app.route('/view_transactions')

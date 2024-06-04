@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NoNameCoin</title>
+    <title>Ver Validadores</title>
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -19,14 +19,30 @@
                 <li><a href="/register_validator">Registrar Validador</a></li>
                 <li><a href="/view_transactions">Ver Transações</a></li>
                 <li><a href="/view_validators">Ver Validadores</a></li>
-                <li><a href="/account_info">Informações da Conta</a></li>
             </ul>
         </nav>
     </div>
 </header>
 <div class="container">
-    <h2>Bem-vindo ao NoNameCoin</h2>
-    <p>Escolha uma das opções acima para começar.</p>
+    <h2>Lista de Validadores</h2>
+    <table>
+        <tr>
+            <th>ID do Validador</th>
+            <th>Total de Validações</th>
+            <th>Aprovações</th>
+            <th>Rejeições</th>
+            <th>Penalidades</th>
+        </tr>
+        {% for validator in validators %}
+        <tr>
+            <td>{{ validator[0] }}</td>
+            <td>{{ validator[1] }}</td>
+            <td>{{ validator[2] }}</td>
+            <td>{{ validator[3] }}</td>
+            <td>{{ validator[4] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 </div>
 </body>
 </html>
