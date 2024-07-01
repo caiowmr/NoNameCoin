@@ -1,54 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Ver Transações</title>
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
-<header>
-    <div class="container">
-        <div id="branding">
-            <h1>NoNameCoin</h1>
+    <header>
+        <div class="container">
+            <div id="branding">
+                <h1>NoNameCoin</h1>
+            </div>
+            <nav>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/create_account">Criar Conta</a></li>
+                    <li><a href="/create_trans">Criar Transação</a></li>
+                    <li><a href="/register_validator">Registrar Validador</a></li>
+                    <li><a href="/view_transactions">Ver Transações</a></li>
+                </ul>
+            </nav>
         </div>
-        <nav>
-            <ul>
-                <li><a href="/">Home</a></li>
-                <li><a href="/create_account">Criar Conta</a></li>
-                <li><a href="/create_trans">Criar Transação</a></li>
-                <li><a href="/register_validator">Registrar Validador</a></li>
-                <li><a href="/view_transactions">Ver Transações</a></li>
-            </ul>
-        </nav>
+    </header>
+    <div class="container">
+        <h2>Ver Transações</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Remetente</th>
+                    <th>Destinatário</th>
+                    <th>Valor</th>
+                    <th>Taxa</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction[0] }}</td>
+                    <td>{{ transaction[1] }}</td>
+                    <td>{{ transaction[2] }}</td>
+                    <td>{{ transaction[3] }}</td>
+                    <td>{{ transaction[4] }}</td>
+                    <td>{{ 'Transação concluida' if transaction[6] == 1 else 'Transação não aprovada' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="/">Voltar</a>
     </div>
-</header>
-<div class="container">
-    <h2>Ver Transações</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Remetente</th>
-                <th>Destinatário</th>
-                <th>Valor</th>
-                <th>Data</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for transaction in transactions %}
-            <tr>
-                <td>{{ transaction[0] }}</td>
-                <td>{{ transaction[1] }}</td>
-                <td>{{ transaction[2] }}</td>
-                <td>{{ transaction[3] }}</td>
-                <td>{{ transaction[4] }}</td>
-                <td>{{ transaction[5] }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <a href="/">Voltar</a>
-</div>
 </body>
+
 </html>

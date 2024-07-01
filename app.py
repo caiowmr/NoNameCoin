@@ -41,6 +41,9 @@ def init_db():
                       validator_id TEXT NOT NULL,
                       transaction_id INTEGER NOT NULL,
                       validation_status INTEGER,
+                      approvals INTEGER,
+                      rejections INTEGER,
+                      total INTEGER DEFAULT 1,  
                       penalty INTEGER DEFAULT 0,
                       FOREIGN KEY (validator_id) REFERENCES validators (validator_id),
                       FOREIGN KEY (transaction_id) REFERENCES transactions (transaction_id))''')
@@ -63,29 +66,83 @@ def handle_create_transaction():
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
 
-        # Check if sender exists and has sufficient balance
+        # Checando se o remetente existe e se o seu saldo é o suficiente
+        #(Primeira validação 1/5)
         cursor.execute("SELECT balance FROM accounts WHERE user_id=?", (sender,))
         sender_balance = cursor.fetchone()
         if sender_balance is None:
-            return jsonify({"status": "error", "message": "Sender does not exist"}), 400
-        if sender_balance[0] < amount + fee:
-            return jsonify({"status": "error", "message": "Insufficient balance"}), 400
+            validation_status = 2
+            cursor.execute("INSERT INTO transactions (sender, receiver, amount, fee, timestamp, validation_status) VALUES (?, ?, ?, ?, ?, ?)",
+                       (sender, receiver, amount, fee, timestamp, validation_status))
+            conn.commit()
+            transaction_id = cursor.lastrowid
+
+            validation_status = 0
+            approvals = 0
+            rejections = 1
+            total = 1
+            validator_id = '27355d9a-5736-4da4-a47e-f521f85451ec'
+            cursor.execute("INSERT INTO validator_history (validator_id,transaction_id, validation_status, approvals, rejections, total) VALUES (?, ?, ?, ?, ?, ?)",
+                        (validator_id, transaction_id,validation_status, approvals, rejections, total,))
+            conn.commit()
+            validator_id = cursor.lastrowid
+
+            conn.close()
+            return jsonify({"message": "Remetente não cadastrado!"})
+        sender_balance = sender_balance[0]  # Checagem extra para evitar erro de valores nulos
+
+        if sender_balance < amount + fee:
+            validation_status = 2
+            cursor.execute("INSERT INTO transactions (sender, receiver, amount, fee, timestamp, validation_status) VALUES (?, ?, ?, ?, ?, ?)",
+                       (sender, receiver, amount, fee, timestamp, validation_status))
+            conn.commit()
+            transaction_id = cursor.lastrowid
+
+            validation_status = 0
+            approvals = 0
+            rejections = 1
+            total = 1
+            validator_id = '27355d9a-5736-4da4-a47e-f521f85451ec'
+            cursor.execute("INSERT INTO validator_history (validator_id,transaction_id, validation_status, approvals, rejections, total) VALUES (?, ?, ?, ?, ?, ?)",
+                        (validator_id, transaction_id,validation_status, approvals, rejections, total,))
+            conn.commit()
+            validator_id = cursor.lastrowid
+        
+            conn.close()
+            return jsonify({"status": "error", "message": "Saldo insuficiente para completar a transação."}), 400
 
         # Update sender's balance
-        new_sender_balance = sender_balance[0] - amount - fee
+        new_sender_balance = sender_balance - amount - fee
         cursor.execute("UPDATE accounts SET balance=? WHERE user_id=?", (new_sender_balance, sender))
 
         # Increment receiver's balance
         cursor.execute("SELECT balance FROM accounts WHERE user_id=?", (receiver,))
-        receiver_balance = cursor.fetchone()[0]
+        receiver_balance = cursor.fetchone()
+        if receiver_balance is None:
+            conn.close()
+            return jsonify({"status": "error", "message": "Receiver does not exist"}), 400
+        receiver_balance = receiver_balance[0]  # Extra check to avoid 'NoneType' error
+
         new_receiver_balance = receiver_balance + amount
         cursor.execute("UPDATE accounts SET balance=? WHERE user_id=?", (new_receiver_balance, receiver))
 
         # Create the transaction
-        cursor.execute("INSERT INTO transactions (sender, receiver, amount, fee, timestamp) VALUES (?, ?, ?, ?, ?)",
-                       (sender, receiver, amount, fee, timestamp))
+        validation_status = 1
+        cursor.execute("INSERT INTO transactions (sender, receiver, amount, fee, timestamp,validation_status) VALUES (?, ?, ?, ?, ?, ?)",
+                       (sender, receiver, amount, fee, timestamp, validation_status))
         conn.commit()
         transaction_id = cursor.lastrowid
+
+
+        validation_status = 1
+        approvals = 1
+        rejections = 0
+        total = 1
+        validator_id = '27355d9a-5736-4da4-a47e-f521f85451ec'
+        cursor.execute("INSERT INTO validator_history (validator_id,transaction_id, validation_status, approvals, rejections, total) VALUES (?, ?, ?, ?, ?, ?)",
+                       (validator_id, transaction_id,validation_status, approvals, rejections, total,))
+        conn.commit()
+        validator_id = cursor.lastrowid
         conn.close()
 
         # Pass the transaction to the Selector
@@ -207,13 +264,7 @@ def validate_transaction(data=None):
         # Verify the unique key
         cursor.execute("SELECT unique_key FROM validators WHERE validator_id=?", (validator_id,))
         stored_key = cursor.fetchone()
-
         if stored_key is None or stored_key[0] != unique_key:
-            cursor.execute("UPDATE validation_queue SET status=2 WHERE transaction_id=? AND validator_id=?",
-                           (transaction_id, validator_id))
-            cursor.execute("INSERT INTO validator_history (validator_id, transaction_id, validation_status, penalty) VALUES (?, ?, ?, ?)",
-                           (validator_id, transaction_id, 2, 1))
-            conn.commit()
             conn.close()
             return jsonify({"status": "error", "message": "Invalid validator key"}), 400
 
@@ -226,6 +277,10 @@ def validate_transaction(data=None):
         # Update the balances of sender and receiver
         cursor.execute("SELECT sender, receiver, amount, fee FROM transactions WHERE transaction_id=?", (transaction_id,))
         transaction = cursor.fetchone()
+        if transaction is None:
+            conn.close()
+            return jsonify({"status": "error", "message": "Transaction not found"}), 400
+
         sender = transaction[0]
         receiver = transaction[1]
         amount = transaction[2]
@@ -246,24 +301,17 @@ def validate_transaction(data=None):
 
 @app.route('/view_validators')
 def view_validators():
-    conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
+    try:
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
 
-    cursor.execute('''
-    SELECT 
-        v.validator_id, 
-        COUNT(vh.transaction_id) AS validations_count, 
-        SUM(CASE WHEN vh.validation_status = 1 THEN 1 ELSE 0 END) AS approved_count,
-        SUM(CASE WHEN vh.validation_status = 2 THEN 1 ELSE 0 END) AS rejected_count,
-        SUM(vh.penalty) AS penalties
-    FROM validators v
-    LEFT JOIN validator_history vh ON v.validator_id = vh.validator_id
-    GROUP BY v.validator_id
-    ''')
+        cursor.execute("SELECT * FROM validator_history")
 
-    validators = cursor.fetchall()
-    conn.close()
-    return render_template('view_validators.html', validators=validators)
+        validators = cursor.fetchall()
+        conn.close()
+        return render_template('view_validators.html', validators=validators)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # Interface web
@@ -379,3 +427,38 @@ def view_transactions():
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
+
+
+# Funcao para adicionar colunas no banco de dados
+# def add_column_accounts():
+#     conn = sqlite3.connect(db_name)
+#     cursor = conn.cursor()
+
+#     # Adicionar coluna 'email' na tabela 'accounts' se ainda não existir
+#     cursor.execute('''PRAGMA table_info(validator_history)''')
+#     columns = cursor.fetchall()
+#     column_names = [col[1] for col in columns]
+
+#     if 'approvals' not in column_names:
+#         cursor.execute('''ALTER TABLE validator_history 
+#                           ADD COLUMN approvals INTEGER''')
+#         conn.commit()
+#         print("Coluna 'approvals' adicionada à tabela 'accounts'")
+#     if 'rejections' not in column_names:
+#         cursor.execute('''ALTER TABLE validator_history 
+#                           ADD COLUMN rejections INTEGER''')
+#         conn.commit()
+#         print("Coluna 'rejections' adicionada à tabela 'accounts'")
+#     else:
+#         print("Coluna 'rejections' já existe na tabela 'accounts'")
+#     if 'total' not in column_names:
+#         cursor.execute('''ALTER TABLE validator_history 
+#                           ADD COLUMN total INTEGER DEFAULT 1''')
+#         conn.commit()
+#         print("Coluna 'total' adicionada à tabela 'accounts'")
+#     else:
+#         print("Coluna 'total' já existe na tabela 'accounts'")
+
+#     conn.close()
+
+# add_column_accounts()

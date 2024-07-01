@@ -1,48 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Ver Validadores</title>
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
-<header>
-    <div class="container">
-        <div id="branding">
-            <h1>NoNameCoin</h1>
+    <header>
+        <div class="container">
+            <div id="branding">
+                <h1>NoNameCoin</h1>
+            </div>
+            <nav>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/create_account">Criar Conta</a></li>
+                    <li><a href="/create_trans">Criar Transação</a></li>
+                    <li><a href="/register_validator">Registrar Validador</a></li>
+                    <li><a href="/view_transactions">Ver Transações</a></li>
+                    <li><a href="/view_validators">Ver Validadores</a></li>
+                </ul>
+            </nav>
         </div>
-        <nav>
-            <ul>
-                <li><a href="/">Home</a></li>
-                <li><a href="/create_account">Criar Conta</a></li>
-                <li><a href="/create_trans">Criar Transação</a></li>
-                <li><a href="/register_validator">Registrar Validador</a></li>
-                <li><a href="/view_transactions">Ver Transações</a></li>
-                <li><a href="/view_validators">Ver Validadores</a></li>
-            </ul>
-        </nav>
+    </header>
+    <div class="container">
+        <h2>Lista de Validadores</h2>
+        <table>
+            <tr>
+                <th>ID do Validador</th>
+                <th>ID da Transação</th>
+                <th>Status</th>
+                <th>Aprovações</th>
+                <th>Rejeições</th>
+                <th>Total</th>
+            </tr>
+            {% for validator in validators %}
+            <tr>
+                <td>{{ validator[0] }}</td>
+                <td>{{ validator[1] }}</td>
+                <td>{{ 'Transação concluida' if validator[2] == 1 else 'Transação não aprovada' }}</td>
+                <td>{{ validator[3] }}</td>
+                <td>{{ validator[4] }}</td>
+                <td>{{ validator[5] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
     </div>
-</header>
-<div class="container">
-    <h2>Lista de Validadores</h2>
-    <table>
-        <tr>
-            <th>ID do Validador</th>
-            <th>Total de Validações</th>
-            <th>Aprovações</th>
-            <th>Rejeições</th>
-            <th>Penalidades</th>
-        </tr>
-        {% for validator in validators %}
-        <tr>
-            <td>{{ validator[0] }}</td>
-            <td>{{ validator[1] }}</td>
-            <td>{{ validator[2] }}</td>
-            <td>{{ validator[3] }}</td>
-            <td>{{ validator[4] }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
 </body>
+
 </html>
