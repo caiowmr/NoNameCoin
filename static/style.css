@@ -1,22 +1,34 @@
 body {
     font-family: Arial, sans-serif;
-    background-color: #f4f4f9;
+    background-color: #f1eddd;
     margin: 0;
     padding: 0;
-}
+    background-image: url('bitcoin-wallpaper-4k.jpg');
+    background-size: cover;
+    background-repeat: no-repeat;
 
+}
+h2, p{
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
 .container {
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     width: 80%;
     margin: 0 auto;
     overflow: hidden;
 }
 
 header {
-    background: #50b3a2;
+    background-image: url('bitcoin-wnjw4r5olqgfwh9r.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     color: #fff;
     padding-top: 30px;
     min-height: 70px;
-    border-bottom: #2980b9 3px solid;
+    border-bottom: #562100 3px solid;
 }
 
 header a {
@@ -51,11 +63,11 @@ header nav {
 }
 
 form {
-    background: #fff;
+    background: #000000;
     padding: 20px;
     margin-top: 30px;
-    border: #ccc 1px solid;
-    box-shadow: 0px 0px 10px 0px #ccc;
+    border: #280062 1px solid;
+    box-shadow: 0px 0px 10px 0px #280062;
 }
 
 form label {
@@ -67,38 +79,43 @@ form label {
 form input[type="text"],
 form input[type="number"],
 form input[type="submit"] {
-    width: 100%;
+    width: 99%;
     padding: 10px;
     margin-bottom: 10px;
+    align-content: center;
 }
 
 form input[type="submit"] {
-    background: #50b3a2;
+    background: #303ce5;
     color: #fff;
     border: 0;
     cursor: pointer;
 }
 
 form input[type="submit"]:hover {
-    background: #2980b9;
+    background: #00ff0d;
+
 }
 
 a {
-    color: #50b3a2;
+    color: #ffffff;
 }
 
 a:hover {
-    color: #2980b9;
+    color: rgba(243, 206, 206, 0.71);
+    text-shadow: 2px 3px 5px rgb(255, 0, 144);
 }
 
 table {
     width: 100%;
     margin-top: 20px;
     border-collapse: collapse;
+    background-color: #11112e;
 }
 
 table, th, td {
-    border: 1px solid #ccc;
+    border: 1px solid #e5c007;
+
 }
 
 th, td {
@@ -107,5 +124,5 @@ th, td {
 }
 
 th {
-    background: #f4f4f9;
+    background: #090917;
 }

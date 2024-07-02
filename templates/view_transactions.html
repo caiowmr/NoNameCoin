@@ -34,6 +34,7 @@
                     <th>Destinatário</th>
                     <th>Valor</th>
                     <th>Taxa</th>
+                    <th>Horário</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -45,7 +46,8 @@
                     <td>{{ transaction[2] }}</td>
                     <td>{{ transaction[3] }}</td>
                     <td>{{ transaction[4] }}</td>
-                    <td>{{ 'Transação concluida' if transaction[6] == 1 else 'Transação não aprovada' }}</td>
+                    <td>{{ transaction[5] | timestamp_to_string }}</td>
+                    <td>{{ 'Transação concluída' if transaction[6] == 1 else 'Transação não aprovada' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

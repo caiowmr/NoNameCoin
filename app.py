@@ -3,6 +3,7 @@ import time
 import sqlite3
 import random
 import uuid
+from datetime import datetime
 
 app = Flask(__name__)
 db_name = 'nonamecoin.db'
@@ -107,7 +108,7 @@ def handle_create_transaction():
                         (validator_id, transaction_id,validation_status, approvals, rejections, total,))
             conn.commit()
             validator_id = cursor.lastrowid
-        
+
             conn.close()
             return jsonify({"status": "error", "message": "Saldo insuficiente para completar a transação."}), 400
 
@@ -197,6 +198,11 @@ def register_validator():
         data = request.get_json()
         validator_id = data['validator_id']
         stake = data['stake']
+
+        # Check if stake meets minimum requirement
+        if stake < 50:
+            return jsonify({"status": "error", "message": "Saldo mínimo de 50 moedas é necessário para se cadastrar como validador."}), 400
+
         unique_key = str(uuid.uuid4())
 
         conn = sqlite3.connect(db_name)
@@ -207,9 +213,10 @@ def register_validator():
         conn.commit()
         conn.close()
 
-        return jsonify({"status": "success", "message": "Validator registered", "unique_key": unique_key}), 201
+        return jsonify({"status": "success", "message": "Validador registrado com sucesso", "unique_key": unique_key}), 201
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 @app.route('/seletor/select', methods=['POST'])
@@ -304,7 +311,8 @@ def validate_transaction():
                        (validation_status, transaction_id, validator_id))
 
         # Atualize a contagem de aprovações/rejeições do histórico do validador
-        cursor.execute("SELECT approvals, rejections, total FROM validator_history WHERE validator_id=? AND transaction_id=?", (validator_id, transaction_id))
+        cursor.execute("SELECT approvals, rejections, total FROM validator_history WHERE validator_id=? AND transaction_id=?",
+                       (validator_id, transaction_id))
         validator_history = cursor.fetchone()
         if validator_history:
             approvals, rejections, total = validator_history
@@ -321,13 +329,21 @@ def validate_transaction():
             total = 1
             cursor.execute("INSERT INTO validator_history (validator_id, transaction_id, validation_status, approvals, rejections, total) VALUES (?, ?, ?, ?, ?, ?)",
                            (validator_id, transaction_id, validation_status, approvals, rejections, total))
-        
-        conn.commit()
-        
+
         # New rule: If the validator rejects 3 times, penalize the validator
         if rejections >= 3:
             cursor.execute("UPDATE validators SET status=? WHERE validator_id=?", ('penalized', validator_id))
-        
+
+        # Permitir que validadores expulsos retornem até duas vezes
+        cursor.execute("SELECT status FROM validators WHERE validator_id=?", (validator_id,))
+        validator_status = cursor.fetchone()
+        if validator_status and validator_status[0] == 'penalized':
+            cursor.execute("SELECT COUNT(*) FROM validator_history WHERE validator_id=? AND validation_status=1", (validator_id,))
+            successful_validations = cursor.fetchone()[0]
+            if successful_validations >= 10000:  # Ajuste conforme necessário
+                cursor.execute("UPDATE validators SET status=? WHERE validator_id=?", ('active', validator_id))
+                cursor.execute("UPDATE validator_history SET penalty=penalty-1 WHERE validator_id=?", (validator_id,))
+
         conn.commit()
         conn.close()
 
@@ -336,15 +352,16 @@ def validate_transaction():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+
 @app.route('/view_validators')
 def view_validators():
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM validator_history")
-
+        cursor.execute("SELECT * FROM validator_history WHERE validation_status=1")
         validators = cursor.fetchall()
+
         conn.close()
         return render_template('view_validators.html', validators=validators)
     except Exception as e:
@@ -451,25 +468,95 @@ def account_info():
     return render_template('account_info.html')
 
 
+from datetime import datetime
+
+
+@app.template_filter('timestamp_to_string')
+def timestamp_to_string(timestamp):
+    if not timestamp:
+        return ""  # Retorna vazio se timestamp for None ou vazio
+
+    try:
+        # Converte o timestamp para float (caso não seja)
+        timestamp_float = float(timestamp)
+
+        # Converte o timestamp float para datetime
+        data_hora = datetime.fromtimestamp(timestamp_float).strftime('%Y-%m-%d %H:%M:%S')
+
+        return data_hora
+    except ValueError:
+        return f"{timestamp}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
 @app.route('/view_transactions')
 def view_transactions():
+    try:
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM transactions")
+        transactions = cursor.fetchall()
+
+        # Mapeia o resultado para um formato mais legível
+        formatted_transactions = []
+        for transaction in transactions:
+            transaction_id, sender, receiver, amount, fee, timestamp, validation_status, validator_id = transaction
+            formatted_timestamp = timestamp_to_string(timestamp)  # Chama a função de filtro para formatar o timestamp
+            formatted_transactions.append(
+                (transaction_id, sender, receiver, amount, fee, formatted_timestamp, validation_status, validator_id))
+
+        conn.close()
+        return render_template('view_transactions.html', transactions=formatted_transactions)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
+@app.route('/seletor/select', methods=['POST'])
+def select_validators_route(data=None):
+    if data is None:
+        data = request.get_json()
+    transaction_id = data['transaction_id']
+
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions")
-    transactions = cursor.fetchall()
+
+    cursor.execute("SELECT validator_id, stake FROM validators WHERE status='active'")
+    validators = cursor.fetchall()
+
+    if len(validators) < 3:
+        return jsonify({"status": "error", "message": "Not enough validators available"}), 400
+
+    # Weighted random selection based on stake
+    total_stake = sum([v[1] for v in validators])
+    selected_validators = random.choices(
+        validators,
+        weights=[v[1] / total_stake for v in validators],
+        k=3
+    )
+
+    # If less than 3 validators are selected, choose more until we have at least 3
+    while len(selected_validators) < 3:
+        remaining_validators = [v for v in validators if v not in selected_validators]
+        additional_selections = random.choices(
+            remaining_validators,
+            weights=[v[1] / total_stake for v in remaining_validators],
+            k=3 - len(selected_validators)
+        )
+        selected_validators.extend(additional_selections)
+
+    for validator in selected_validators[:3]:
+        cursor.execute("INSERT INTO validation_queue (transaction_id, validator_id) VALUES (?, ?)",
+                       (transaction_id, validator[0]))
+    conn.commit()
     conn.close()
-    return render_template('view_transactions.html', transactions=transactions)
 
+    # Pass the transaction to the selected validators
+    pass_transaction_to_validators(transaction_id, selected_validators[:3])
 
+    return jsonify({"status": "success", "validators": selected_validators[:3]}), 200
 
-@app.route('/select_validators_for_transaction')
-def select_validators_for_transaction():
-    conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM validators")
-    transactions = cursor.fetchall()
-    conn.close()
-    return render_template('select_validators.html', transactions=transactions)
 
 
 if __name__ == '__main__':
@@ -487,19 +574,19 @@ if __name__ == '__main__':
 #     column_names = [col[1] for col in columns]
 
 #     if 'approvals' not in column_names:
-#         cursor.execute('''ALTER TABLE validator_history 
+#         cursor.execute('''ALTER TABLE validator_history
 #                           ADD COLUMN approvals INTEGER''')
 #         conn.commit()
 #         print("Coluna 'approvals' adicionada à tabela 'accounts'")
 #     if 'rejections' not in column_names:
-#         cursor.execute('''ALTER TABLE validator_history 
+#         cursor.execute('''ALTER TABLE validator_history
 #                           ADD COLUMN rejections INTEGER''')
 #         conn.commit()
 #         print("Coluna 'rejections' adicionada à tabela 'accounts'")
 #     else:
 #         print("Coluna 'rejections' já existe na tabela 'accounts'")
 #     if 'total' not in column_names:
-#         cursor.execute('''ALTER TABLE validator_history 
+#         cursor.execute('''ALTER TABLE validator_history
 #                           ADD COLUMN total INTEGER DEFAULT 1''')
 #         conn.commit()
 #         print("Coluna 'total' adicionada à tabela 'accounts'")

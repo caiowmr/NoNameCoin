@@ -26,13 +26,12 @@
         </div>
     </header>
     <div class="container">
-        <h2>Lista de Validadores</h2>
+        <h2>Lista de Validadores Selecionados</h2>
         <table>
             <tr>
                 <th>ID do Validador</th>
                 <th>ID da Transação</th>
                 <th>Status</th>
-                <th>Penalidades</th>
                 <th>Aprovações</th>
                 <th>Rejeições</th>
                 <th>Total</th>
@@ -41,8 +40,7 @@
             <tr>
                 <td>{{ validator[0] }}</td>
                 <td>{{ validator[1] }}</td>
-                <td>{{ 'Transação concluida' if validator[2] == 1 else 'Transação não aprovada' }}</td>
-                <td>{{ validator[3] }}</td>
+                <td>{{ 'Transação aprovada' if validator[2] == 1 else 'Transação não aprovada' }}</td>
                 <td>{{ validator[4] }}</td>
                 <td>{{ validator[5] }}</td>
                 <td>{{ validator[6] }}</td>
