@@ -111,6 +111,31 @@ def handle_create_transaction():
             conn.close()
             return jsonify({"status": "error", "message": "Saldo insuficiente para completar a transação."}), 400
 
+        # Nova validação: Verificar o número de transações do remetente no último minuto
+        one_minute_ago = time.time() - 60
+        cursor.execute("SELECT COUNT(*) FROM transactions WHERE sender=? AND timestamp>=?", (sender, one_minute_ago))
+        recent_transactions_count = cursor.fetchone()[0]
+        if recent_transactions_count >= 100:
+            validation_status = 2
+            cursor.execute("INSERT INTO transactions (sender, receiver, amount, fee, timestamp, validation_status) VALUES (?, ?, ?, ?, ?, ?)",
+                       (sender, receiver, amount, fee, timestamp, validation_status))
+            conn.commit()
+            transaction_id = cursor.lastrowid
+
+            validation_status = 0
+            approvals = 0
+            rejections = 1
+            total = 1
+            validator_id = '27355d9a-5736-4da4-a47e-f521f85451ec'
+            cursor.execute("INSERT INTO validator_history (validator_id,transaction_id, validation_status, approvals, rejections, total) VALUES (?, ?, ?, ?, ?, ?)",
+                        (validator_id, transaction_id,validation_status, approvals, rejections, total,))
+            conn.commit()
+            validator_id = cursor.lastrowid
+
+            conn.close()
+            return jsonify({"status": "error", "message": "Limite de transações por minuto excedido."}), 400
+
+
         # Update sender's balance
         new_sender_balance = sender_balance - amount - fee
         cursor.execute("UPDATE accounts SET balance=? WHERE user_id=?", (new_sender_balance, sender))
@@ -120,7 +145,7 @@ def handle_create_transaction():
         receiver_balance = cursor.fetchone()
         if receiver_balance is None:
             conn.close()
-            return jsonify({"status": "error", "message": "Receiver does not exist"}), 400
+            return jsonify({"status": "error", "message": "Destinatário não cadastrado no sistema!"}), 400
         receiver_balance = receiver_balance[0]  # Extra check to avoid 'NoneType' error
 
         new_receiver_balance = receiver_balance + amount
@@ -250,47 +275,59 @@ def get_validator_unique_key(validator_id):
 
 # Validador: Validação das transações
 @app.route('/validador/validate', methods=['POST'])
-def validate_transaction(data=None):
+def validate_transaction():
     try:
-        if data is None:
-            data = request.get_json()
-        transaction_id = data['transaction_id']
+        data = request.get_json()
         validator_id = data['validator_id']
-        unique_key = data['unique_key']
+        transaction_id = data['transaction_id']
+        validation_status = data['validation_status']
 
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
 
-        # Verify the unique key
-        cursor.execute("SELECT unique_key FROM validators WHERE validator_id=?", (validator_id,))
-        stored_key = cursor.fetchone()
-        if stored_key is None or stored_key[0] != unique_key:
+        cursor.execute("SELECT stake, status FROM validators WHERE validator_id=?", (validator_id,))
+        validator = cursor.fetchone()
+        if validator is None or validator[1] != 'active':
             conn.close()
-            return jsonify({"status": "error", "message": "Invalid validator key"}), 400
+            return jsonify({"status": "error", "message": "Validator is not active or does not exist"}), 400
 
-        # Validate the transaction (here we assume it's always successful for simulation)
-        cursor.execute("UPDATE transactions SET validation_status=1, validator_id=? WHERE transaction_id=?",
-                       (validator_id, transaction_id))
-        cursor.execute("UPDATE validation_queue SET status=1 WHERE transaction_id=? AND validator_id=?",
+        # Check if validator is in validation queue for the transaction
+        cursor.execute("SELECT status FROM validation_queue WHERE transaction_id=? AND validator_id=?",
                        (transaction_id, validator_id))
-
-        # Update the balances of sender and receiver
-        cursor.execute("SELECT sender, receiver, amount, fee FROM transactions WHERE transaction_id=?", (transaction_id,))
-        transaction = cursor.fetchone()
-        if transaction is None:
+        queue_status = cursor.fetchone()
+        if queue_status is None or queue_status[0] != 0:
             conn.close()
-            return jsonify({"status": "error", "message": "Transaction not found"}), 400
+            return jsonify({"status": "error", "message": "Validator is not in queue or has already validated"}), 400
 
-        sender = transaction[0]
-        receiver = transaction[1]
-        amount = transaction[2]
-        fee = transaction[3]
+        # Update validation status
+        cursor.execute("UPDATE validation_queue SET status=? WHERE transaction_id=? AND validator_id=?",
+                       (validation_status, transaction_id, validator_id))
 
-        cursor.execute("UPDATE accounts SET balance = balance - ? WHERE user_id = ?", (amount + fee, sender))
-        cursor.execute("UPDATE accounts SET balance = balance + ? WHERE user_id = ?", (amount, receiver))
-
-        cursor.execute("INSERT INTO validator_history (validator_id, transaction_id, validation_status) VALUES (?, ?, ?)",
-                       (validator_id, transaction_id, 1))
+        # Atualize a contagem de aprovações/rejeições do histórico do validador
+        cursor.execute("SELECT approvals, rejections, total FROM validator_history WHERE validator_id=? AND transaction_id=?", (validator_id, transaction_id))
+        validator_history = cursor.fetchone()
+        if validator_history:
+            approvals, rejections, total = validator_history
+            if validation_status == 1:
+                approvals += 1
+            else:
+                rejections += 1
+            total += 1
+            cursor.execute("UPDATE validator_history SET approvals=?, rejections=?, total=? WHERE validator_id=? AND transaction_id=?",
+                           (approvals, rejections, total, validator_id, transaction_id))
+        else:
+            approvals = 1 if validation_status == 1 else 0
+            rejections = 1 if validation_status == 2 else 0
+            total = 1
+            cursor.execute("INSERT INTO validator_history (validator_id, transaction_id, validation_status, approvals, rejections, total) VALUES (?, ?, ?, ?, ?, ?)",
+                           (validator_id, transaction_id, validation_status, approvals, rejections, total))
+        
+        conn.commit()
+        
+        # New rule: If the validator rejects 3 times, penalize the validator
+        if rejections >= 3:
+            cursor.execute("UPDATE validators SET status=? WHERE validator_id=?", ('penalized', validator_id))
+        
         conn.commit()
         conn.close()
 
@@ -424,10 +461,20 @@ def view_transactions():
     return render_template('view_transactions.html', transactions=transactions)
 
 
+
+@app.route('/select_validators_for_transaction')
+def select_validators_for_transaction():
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM validators")
+    transactions = cursor.fetchall()
+    conn.close()
+    return render_template('select_validators.html', transactions=transactions)
+
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
-
 
 # Funcao para adicionar colunas no banco de dados
 # def add_column_accounts():

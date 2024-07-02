@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Seleção de Validadores</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">Seleção de Validadores</h1>
+        <form id="validator-selection-form" method="POST" action="/seletor/select">
+            <div class="form-group">
+                <label for="transaction_id">ID da Transação</label>
+                <input type="text" class="form-control" id="transaction_id" name="transaction_id" required>
+            </div>
+            <div class="form-group">
+                <label for="validators">Validadores Disponíveis</label>
+                <select multiple class="form-control" id="validators" name="validators[0]">
+                    <!-- Opções de validadores serão preenchidas aqui -->
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Selecionar Validadores</button>
+        </form>
+        <a href="/view_validators" class="btn btn-secondary mt-3">Ver Histórico de Validadores</a>
+    </div>
+    <script>
+        // Código para buscar validadores do servidor e preencher o select
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/seletor/register')
+                .then(response => response.json())
+                .then(data => {
+                    const validatorSelect = document.getElementById('validators');
+                    data.validators.forEach(validator => {
+                        const option = document.createElement('option');
+                        option.value = validator.validator_id;
+                        option.textContent = `ID: ${validator.validator_id}, Stake: ${validator.stake}`;
+                        validatorSelect.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Erro ao buscar validadores:', error));
+        });
+    </script>
+</body>
+</html>
