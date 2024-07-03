@@ -1,2 +1,2 @@
 # NoNameCoin
-Reposiório dedicado as builds da moéda ficticia "NoNameCoin".
+Repositório dedicado as builds da moeda fictícia "NoNameCoin".
